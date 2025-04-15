@@ -16,6 +16,7 @@ export default function ProofUploader(): ReactElement {
     verifierKey?: string;
     notaryKey?: string;
   } | null>(null);
+  const [fullProof, setFullProof] = useState<any | null>(null);
   const [uploading, setUploading] = useState(false);
   const [metadata, setMetaData] = useState<any>({ meta: '', version: '' });
   const onFileUpload: ChangeEventHandler<HTMLInputElement> = useCallback(
@@ -50,6 +51,7 @@ export default function ProofUploader(): ReactElement {
             if (proof) {
               setUploading(false);
               setProof(res);
+              setFullProof(proof);
             }
           }
         });
@@ -69,6 +71,7 @@ export default function ProofUploader(): ReactElement {
         verifierKey={proof.verifierKey}
         notaryKey={proof.notaryKey}
         info={metadata}
+        proof={fullProof}
       />
     );
   }

@@ -18,6 +18,11 @@ import {
   download,
   isPopupWindow,
 } from '../../utils/misc';
+
+import {
+  sendProofToChain
+} from '../../utils/sendToChain';
+
 import classNames from 'classnames';
 import { useDispatch } from 'react-redux';
 import { RemoveHistory } from '../History/request-menu';
@@ -30,6 +35,7 @@ export default function ProofViewer(props?: {
   sent?: string;
   verifierKey?: string;
   notaryKey?: string;
+  proof?: any;
   info?: {
     meta: { notaryUrl: string; websocketProxyUrl: string };
     version: string;
@@ -42,6 +48,9 @@ export default function ProofViewer(props?: {
   const [tab, setTab] = useState('sent');
   const [isPopup, setIsPopup] = useState(isPopupWindow());
   const [showRemoveModal, setShowRemoveModal] = useState(false);
+  const [wsUrl, setWsUrl] = useState('');
+
+  const proof = props?.proof || request?.proof;
 
   const onDelete = useCallback(async () => {
     if (requestId) {
@@ -95,6 +104,11 @@ export default function ProofViewer(props?: {
           >
             Metadata
           </TabLabel>
+
+          <TabLabel onClick={() => setTab('onchain')} active={tab === 'onchain'}>
+            On-chain
+          </TabLabel>
+
           <div className="flex flex-row flex-grow items-center justify-end">
             {!props?.recv && (
               <button
@@ -153,6 +167,41 @@ export default function ProofViewer(props?: {
             />
           </div>
         )}
+
+        {tab === 'onchain' && (
+          <div className="flex flex-col gap-2 w-full">
+            <textarea
+              className="w-full resize-none bg-slate-100 text-slate-800 border p-2 text-[10px] break-all h-64 outline-none font-mono"
+              value={proof ? JSON.stringify(proof, null, 2) : 'No data field found in proof'}
+              readOnly
+            ></textarea>
+            <input
+              type="text"
+              placeholder="wss://your-substrate-node"
+              value={wsUrl}
+              onChange={(e) => setWsUrl(e.target.value)}
+              className="border border-slate-400 rounded p-2 font-mono text-[10px] w-full"
+            />
+            <button
+              className="button is-primary w-fit"
+              onClick={async () => {
+
+                const hex = proof?.data
+                if (!hex) return alert('No data to send');
+                try {
+                  await sendProofToChain(wsUrl, hex);
+                  alert('Proof sent to chain!');
+                } catch (e) {
+                  console.error(e);
+                  alert('Failed to send proof');
+                }
+              }}
+            >
+              📡 Send to blockchain
+            </button>
+          </div>
+        )}
+
       </div>
     </div>
   );

@@ -28,6 +28,7 @@ import { useDispatch } from 'react-redux';
 import { RemoveHistory } from '../History/request-menu';
 import { PresentationJSON } from 'tlsn-js/build/types';
 import { RequestHistory } from '../../entries/Background/rpc';
+import { sendTlsNProofToProver } from '../../utils/sendToProver';
 
 export default function ProofViewer(props?: {
   className?: string;
@@ -189,8 +190,12 @@ export default function ProofViewer(props?: {
                 const hex = proof?.data
                 if (!hex) return alert('No data to send');
                 try {
-                  await sendProofToChain(wsUrl, hex);
-                  alert('Proof sent to chain!');
+                  const localProofServerUrl = "http://localhost:3000/prove";
+                  const receipt = await sendTlsNProofToProver(localProofServerUrl, hex);
+                  console.log('Proof sent to prover!');
+
+                  const result = await sendProofToChain(wsUrl, receipt);
+
                 } catch (e) {
                   console.error(e);
                   alert('Failed to send proof');

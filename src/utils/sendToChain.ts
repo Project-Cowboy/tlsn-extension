@@ -8,7 +8,8 @@ export async function sendProofToChain(ws_url: string, hexData: string) {
   const keyring = new Keyring({ type: 'sr25519' });
   const sender = keyring.addFromUri('//Alice'); // or use real account
 
-  const tx = api.tx.cowboy.verifyAndCommit(`0x${hexData}`);
+  // const tx = api.tx.cowboy.verifyAndCommit(`0x${hexData}`);
+  const tx = api.tx.cowboy.verifyAndCommit(hexData);
 
   const unsub = await tx.signAndSend(sender, ({ status }) => {
     if (status.isInBlock) {

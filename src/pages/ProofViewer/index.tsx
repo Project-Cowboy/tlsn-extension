@@ -19,16 +19,19 @@ import {
   isPopupWindow,
 } from '../../utils/misc';
 
-import {
-  sendProofToChain
-} from '../../utils/sendToChain';
-
 import classNames from 'classnames';
 import { useDispatch } from 'react-redux';
 import { RemoveHistory } from '../History/request-menu';
 import { PresentationJSON } from 'tlsn-js/build/types';
 import { RequestHistory } from '../../entries/Background/rpc';
+
+// Cowboy
 import { sendTlsNProofToProver } from '../../utils/sendToProver';
+import {
+  sendProofToChain
+} from '../../utils/sendToChain';
+import { WalletManager, WalletHeader } from "./WalletManager"
+import { useInExtensionWallet } from "../../utils/wallet"
 
 export default function ProofViewer(props?: {
   className?: string;
@@ -49,7 +52,10 @@ export default function ProofViewer(props?: {
   const [tab, setTab] = useState('sent');
   const [isPopup, setIsPopup] = useState(isPopupWindow());
   const [showRemoveModal, setShowRemoveModal] = useState(false);
+  const [typedWs, setTypedWs] = useState('');
   const [wsUrl, setWsUrl] = useState('');
+
+  const { keyring, active, ready } = useInExtensionWallet();
 
   const proof = props?.proof || request?.proof;
 
@@ -169,33 +175,74 @@ export default function ProofViewer(props?: {
           </div>
         )}
 
+
         {tab === 'onchain' && (
-          <div className="flex flex-col gap-2 w-full">
-            <textarea
-              className="w-full resize-none bg-slate-100 text-slate-800 border p-2 text-[10px] break-all h-64 outline-none font-mono"
-              value={proof ? JSON.stringify(proof, null, 2) : 'No data field found in proof'}
-              readOnly
-            ></textarea>
+          <div className="flex flex-col gap-4 w-full">
+
+
+          {/* <div className="flex flex-col">
+                <label className="font-semibold mb-1">Node URL</label>
+                <input
+                  type="text"
+                  placeholder="ws://localhost:9944 or wss://your-node"
+                  value={wsUrl}
+                  onChange={(e) => setWsUrl(e.target.value)}
+                  className="border border-slate-400 rounded px-2 py-1 font-mono w-full"
+                />
+          </div> */}
+        <div className="flex flex-col">
+          <label className="font-semibold mb-1">Node URL</label>
+          <div className="flex gap-2">
             <input
               type="text"
-              placeholder="wss://your-substrate-node"
-              value={wsUrl}
-              onChange={(e) => setWsUrl(e.target.value)}
-              className="border border-slate-400 rounded p-2 font-mono text-[10px] w-full"
+              placeholder="ws://localhost:9944 or wss://…"
+              value={typedWs}
+              onChange={(e) => setTypedWs(e.target.value)}
+              className="border rounded px-2 py-1 font-mono flex-grow"
             />
+            {/* 2) only when they click this do we commit the URL */}
             <button
-              className="button is-primary w-fit"
+              className="button"
+              onClick={() => setWsUrl(typedWs)}
+              disabled={!typedWs.startsWith('ws://') && !typedWs.startsWith('wss://')}
+            >
+              Connect
+            </button>
+          </div>
+        </div>
+
+
+            {wsUrl && (
+              <WalletHeader wsUrl={wsUrl} />
+            )}
+
+            <textarea
+              className="w-full resize-none bg-slate-100 text-slate-800 border p-2 font-mono h-56 outline-none"
+              value={proof ? JSON.stringify(proof, null, 2) : 'No data found'}
+              readOnly
+            />
+
+            <button
+              className="button is-primary w-full"
+              disabled={!wsUrl}
               onClick={async () => {
+                if (!wsUrl) {
+                  return alert('Please select or enter a node URL first');
+                }
+                if (!active || !keyring) {
+                  return alert('Pick or create an account first');
+                }
+                if (!proof?.data) {
+                  return alert('Nothing to send');
+                }
 
-                const hex = proof?.data
-                if (!hex) return alert('No data to send');
                 try {
-                  const localProofServerUrl = "http://localhost:3000/prove";
-                  const receipt = await sendTlsNProofToProver(localProofServerUrl, hex);
-                  console.log('Proof sent to prover!');
-
-                  const result = await sendProofToChain(wsUrl, receipt);
-
+                  const receipt = await sendTlsNProofToProver(
+                    'http://localhost:1881/prove',
+                    proof.data
+                  );
+                  await sendProofToChain(wsUrl, receipt, keyring.getPair(active));
+                  alert('✅ Sent!');
                 } catch (e) {
                   console.error(e);
                   alert('Failed to send proof');

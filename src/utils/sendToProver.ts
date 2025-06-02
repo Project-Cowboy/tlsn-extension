@@ -1,11 +1,13 @@
-export async function sendTlsNProofToProver(url: string, hexData: string) {
+export async function sendTlsNProofToProver(url: string, payload: {}) {
+  console.log("Sending... ", payload)
   const res = await fetch(url, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json "
+      "Content-Type": "application/json"
     },
-    body: hexData,
+    body: JSON.stringify(payload),
   });
+
   if (!res.ok) {
     throw new Error(`Prover returned ${res.status}`);
   }

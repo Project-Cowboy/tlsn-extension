@@ -3,6 +3,7 @@ import React, {
   ReactElement,
   useState,
   useEffect,
+  useMemo,
   MouseEventHandler,
   useCallback,
 } from 'react';
@@ -14,7 +15,6 @@ import {
 } from '../../reducers/history';
 import Icon from '../../components/Icon';
 import {
-  convertNotaryWsToHttp,
   download,
   isPopupWindow,
 } from '../../utils/misc';
@@ -30,8 +30,11 @@ import { sendTlsNProofToProver } from '../../utils/sendToProver';
 import {
   sendProofToChain
 } from '../../utils/sendToChain';
-import { WalletManager, WalletHeader } from "./WalletManager"
+import { WalletHeader } from "./WalletManager"
 import { useInExtensionWallet } from "../../utils/wallet"
+import AppInfoDisplay from "./AppInfoDisplay"
+import { useNotifier } from '../../utils/notifications';
+import { ApiPromise, WsProvider } from '@polkadot/api';
 
 export default function ProofViewer(props?: {
   className?: string;
@@ -54,8 +57,19 @@ export default function ProofViewer(props?: {
   const [showRemoveModal, setShowRemoveModal] = useState(false);
   const [typedWs, setTypedWs] = useState('');
   const [wsUrl, setWsUrl] = useState('');
+  const [appInfo, setAppInfo] = useState<{
+    selector: string;
+    codeHash: string;
+    codeUri: string;
+    admin: string;
+  } | null>(null);
+  const [appId, setAppId] = useState<number | null>(null);
 
+  // Cowboy, etc:
+  const { success, error, info } = useNotifier();
   const { keyring, active, ready } = useInExtensionWallet();
+
+  console.log('🧠 Wallet hook state:', { keyring, active, ready });
 
   const proof = props?.proof || request?.proof;
 
@@ -73,6 +87,58 @@ export default function ProofViewer(props?: {
     props,
     request,
   );
+
+  const handleProveAndSend = useCallback(async () => {
+    if (!wsUrl) {
+      return info('Please select or enter a node URL first');
+    }
+    if (!active || !keyring) {
+      return info('Pick or create an account first');
+    }
+    if (!proof?.data) {
+      return info('Nothing to send');
+    }
+
+    const body: { data: Uint8Array; app_id?: number[] | null } = {
+      data: proof.data
+    };
+    if (appId !== null) {
+      body.app_id = appId;
+    }
+
+    try {
+      info('🔎 Running RISC0 prover…');
+      const receipt = await sendTlsNProofToProver(
+        'http://localhost:1881/prove',
+        body
+      );
+
+      info('📡 Submitting proof to chain…');
+      const blockHash = await sendProofToChain(
+        wsUrl,
+        appId,
+        receipt,
+        keyring.getPair(active),
+        (result) => {
+          if (result.status.isBroadcast) {
+            info('📢 Broadcast to network');
+          } else if (result.status.isInBlock) {
+            info(`📥 Included at ${result.status.asInBlock.toHex()}`);
+          } else if (result.status.isFinalized) {
+            success(`🔒 Finalized in block ${result.status.asFinalized.toHex()}`);
+          }
+        }
+      );
+
+      // Note: by the time this resolves, it’s already finalized
+      console.log('Done, finalized in', blockHash);
+    } catch (e: any) {
+      console.error(e);
+      error(`❌ ${e.message}`);
+    }
+
+  }, [wsUrl, active, keyring, proof, info, success, error]);
+
 
   return (
     <div
@@ -178,78 +244,61 @@ export default function ProofViewer(props?: {
 
         {tab === 'onchain' && (
           <div className="flex flex-col gap-4 w-full">
-
-
-          {/* <div className="flex flex-col">
-                <label className="font-semibold mb-1">Node URL</label>
+            <div className="flex flex-col">
+              <label className="font-semibold mb-1">Node URL</label>
+              <div className="flex gap-2">
                 <input
                   type="text"
-                  placeholder="ws://localhost:9944 or wss://your-node"
-                  value={wsUrl}
-                  onChange={(e) => setWsUrl(e.target.value)}
-                  className="border border-slate-400 rounded px-2 py-1 font-mono w-full"
+                  placeholder="ws://localhost:9944 or wss://…"
+                  value={typedWs}
+                  onChange={(e) => setTypedWs(e.target.value)}
+                  className="border rounded px-2 py-1 font-mono flex-grow"
                 />
-          </div> */}
-        <div className="flex flex-col">
-          <label className="font-semibold mb-1">Node URL</label>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder="ws://localhost:9944 or wss://…"
-              value={typedWs}
-              onChange={(e) => setTypedWs(e.target.value)}
-              className="border rounded px-2 py-1 font-mono flex-grow"
-            />
-            {/* 2) only when they click this do we commit the URL */}
-            <button
-              className="button"
-              onClick={() => setWsUrl(typedWs)}
-              disabled={!typedWs.startsWith('ws://') && !typedWs.startsWith('wss://')}
-            >
-              Connect
-            </button>
-          </div>
-        </div>
+                {/* 2) only when they click this do we commit the URL */}
+                <button
+                  className="button"
+                  onClick={() => setWsUrl(typedWs)}
+                  disabled={!typedWs.startsWith('ws://') && !typedWs.startsWith('wss://')}
+                >
+                  Connect
+                </button>
+              </div>
+            </div>
 
 
             {wsUrl && (
               <WalletHeader wsUrl={wsUrl} />
             )}
 
-            <textarea
+            <AppInfoDisplay
+              sent={props.sent || request?.verification?.sent}
+              tab={tab}
+              wsUrl={wsUrl}
+              onChange={(foundId, foundInfo) => {
+                setAppId(foundId);
+                setAppInfo(foundInfo);
+              }}
+            />
+
+            {/* <textarea
               className="w-full resize-none bg-slate-100 text-slate-800 border p-2 font-mono h-56 outline-none"
               value={proof ? JSON.stringify(proof, null, 2) : 'No data found'}
               readOnly
-            />
+            /> */}
+
+          <textarea
+            className="w-full resize-none bg-slate-100 text-slate-800 border p-2 font-mono max-h-40 overflow-y-auto outline-none"
+            value={proof ? JSON.stringify(proof, null, 2) : 'No data found'}
+            readOnly
+          />
 
             <button
               className="button is-primary w-full"
-              disabled={!wsUrl}
-              onClick={async () => {
-                if (!wsUrl) {
-                  return alert('Please select or enter a node URL first');
-                }
-                if (!active || !keyring) {
-                  return alert('Pick or create an account first');
-                }
-                if (!proof?.data) {
-                  return alert('Nothing to send');
-                }
-
-                try {
-                  const receipt = await sendTlsNProofToProver(
-                    'http://localhost:1881/prove',
-                    proof.data
-                  );
-                  await sendProofToChain(wsUrl, receipt, keyring.getPair(active));
-                  alert('✅ Sent!');
-                } catch (e) {
-                  console.error(e);
-                  alert('Failed to send proof');
-                }
-              }}
+              // disabled={!wsUrl || !active || !proof?.data}
+              disabled={!wsUrl || !active}
+              onClick={handleProveAndSend}
             >
-              📡 Send to blockchain
+              Prove, and send to network
             </button>
           </div>
         )}

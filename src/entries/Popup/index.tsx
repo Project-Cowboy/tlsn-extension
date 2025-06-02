@@ -1,4 +1,8 @@
 import React from 'react';
+
+// Cowboy import
+import { Toaster } from 'react-hot-toast';
+
 import { createRoot } from 'react-dom/client';
 import { HashRouter } from 'react-router-dom';
 import Popup from './Popup';
@@ -17,6 +21,7 @@ const root = createRoot(container!); // createRoot(container!) if you use TypeSc
 root.render(
   <Provider store={store}>
     <HashRouter>
+      <Toaster position="top-right" />
       <Popup />
     </HashRouter>
   </Provider>,

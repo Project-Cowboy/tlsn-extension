@@ -1,4 +1,3 @@
-// src/components/WalletManager.tsx
 import React, {
   ReactNode,
   ReactElement,
@@ -17,6 +16,9 @@ const {
   sr25519Verify,
   randomAsU8a
 } = require('@polkadot/util-crypto');
+import { useNotifier } from '../../utils/notifications';
+import Icon from '../../components/Icon';
+
 
 export function WalletManager() {
   const { ready, accounts, active, create, setActive, keyring } = useInExtensionWallet();
@@ -53,6 +55,8 @@ export function WalletManager() {
 
 export function WalletHeader({ wsUrl }: { wsUrl: string }) {
   const { ready, accounts, active, create, setActive, keyring } = useInExtensionWallet();
+  const { success, error, info } = useNotifier();
+  const [isClaiming, setIsClaiming] = useState(false);
   const balance = useBalance(active, wsUrl);
 
   if (!ready) {
@@ -76,28 +80,54 @@ export function WalletHeader({ wsUrl }: { wsUrl: string }) {
   const current = accounts.find((a) => a.address === active)!;
 
   const claimFunds = async () => {
-    if (!active || !keyring) return alert('No account selected');
+    if (!active || !keyring) {
+      return info('No account selected');
+    }
+    setIsClaiming(true);
+  
     try {
       const pair = keyring.getPair(active);
       const api = await ApiPromise.create({ provider: new WsProvider(wsUrl) });
-      const alicePair = keyring.addFromUri('//Alice');
-      const payload = stringToU8a('CLAIM');
-      
-      const signature = await pair.sign(payload)
+  
+      const aliceFaucetOwner = keyring.addFromUri('//Alice');
 
+      
+      // 1) sign payload
+      info('🔐 Signing claim payload…');
+      const payload = stringToU8a('CLAIM');
+      // payload.join(aliceFaucetOwner.address)
+
+      console.log("Claim payload: ", payload)
+      const signature = await pair.sign(payload);
+      console.log("signature ", signature)
+  
+      // 2) build and send tx
+      info('🚀 Submitting transaction…');
       const unsub = await api.tx
         .faucet
-        .claim(
-          pair.addressRaw,
-          signature,
-          alicePair.address,
-          )
-        .send((f) => {
-          console.log("FFF ", f)
+        // Order is sender, signature, faucet owner
+        .claim(pair.addressRaw, signature, aliceFaucetOwner.address)
+        .send(({ status, events, dispatchError }) => {
+          if (status.isInBlock) {
+            success(`✅ Included in block ${status.asInBlock.toHex()}`);
+            unsub();
+            setIsClaiming(false);
+          } else if (status.isBroadcast) {
+            info('📡 Broadcast to network…');
+          } else if (dispatchError) {
+            // module error
+            const errorInfo = dispatchError.isModule
+              ? api.registry.findMetaError(dispatchError.asModule)
+              : dispatchError.toString();
+            error(`❌ Tx failed: ${errorInfo}`);
+            unsub();
+            setIsClaiming(false);
+          }
         });
     } catch (err) {
       console.error(err);
-      alert('Error claiming funds');
+      error('❌ Error during claim flow');
+      setIsClaiming(false);
     }
   };
 
@@ -121,9 +151,21 @@ export function WalletHeader({ wsUrl }: { wsUrl: string }) {
       </div>
 
       <div className="flex items-center gap-4">
-        <button className="button is-small" onClick={claimFunds}>
+
+
+        {/* <button className="button is-small" onClick={claimFunds}>
           🎁 Claim
+        </button> */}
+        <button
+          className="button is-small flex items-center gap-1"
+          onClick={claimFunds}
+          disabled={isClaiming}
+        >
+            {isClaiming && <Icon fa="fa-solid fa-spinner fa-spin" />}
+              🎁 Claim
         </button>
+
+
         <div className="text-right">
           <div className="text-xs text-gray-500">Balance</div>
           <div className="font-semibold">
